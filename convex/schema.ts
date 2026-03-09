@@ -11,6 +11,7 @@ export default defineSchema({
     phone: v.optional(v.string()),
     phoneVerificationTime: v.optional(v.number()),
     isOnboarded: v.boolean(),
+    primaryGoogleAccountId: v.optional(v.id("googleAccounts")),
   })
     .index("by_phone", ["phone"]),
 

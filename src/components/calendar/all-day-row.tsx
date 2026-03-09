@@ -6,17 +6,24 @@ import { AllDayEventBlock } from "./event-block";
 import type { CalendarEvent } from "./types";
 
 interface AllDayRowProps {
-  weekStart: Date;
+  viewStart: Date;
+  visibleDays: number;
   events: CalendarEvent[];
 }
 
-export function AllDayRow({ weekStart, events }: AllDayRowProps) {
+export function AllDayRow({ viewStart, visibleDays, events }: AllDayRowProps) {
   if (events.length === 0) return null;
 
-  const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  const days = Array.from({ length: visibleDays }, (_, i) => addDays(viewStart, i));
 
   return (
-    <div className="grid grid-cols-[60px_repeat(7,1fr)] border-b border-border">
+    <div
+      className="shrink-0 border-b border-border"
+      style={{
+        display: "grid",
+        gridTemplateColumns: `44px repeat(${visibleDays}, 1fr)`,
+      }}
+    >
       <div className="flex items-start justify-end pr-2 pt-1">
         <span className="text-[10px] text-muted-foreground">all-day</span>
       </div>
@@ -38,7 +45,7 @@ export function AllDayRow({ weekStart, events }: AllDayRowProps) {
             key={i}
             className={cn(
               "flex flex-col gap-0.5 p-1 min-h-[28px] border-l border-border min-w-0 overflow-hidden",
-              isToday && "bg-primary/5",
+              
             )}
           >
             {dayEvents.map((event) => (

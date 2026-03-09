@@ -2,6 +2,7 @@
 
 import { v } from "convex/values";
 import { action } from "./_generated/server";
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { internal } from "./_generated/api";
 
 async function refreshAccessToken(
@@ -239,5 +240,121 @@ export const getCalendarEvents = action({
     const allEvents = eventArrays.flat();
     allEvents.sort((a, b) => a.start.localeCompare(b.start));
     return allEvents;
+  },
+});
+
+export const getFriendsEvents = action({
+  args: {
+    friendIds: v.array(v.id("users")),
+    timeMin: v.string(),
+    timeMax: v.string(),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<Record<string, CalendarEvent[]>> => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+
+    if (args.friendIds.length === 0) return {};
+
+    const verifiedIds = await ctx.runQuery(
+      internal.calendarHelpers.verifyFriendships,
+      { userId, friendIds: args.friendIds },
+    );
+
+    if (verifiedIds.length === 0) return {};
+
+    const nowSec = Math.floor(Date.now() / 1000);
+    const result: Record<string, CalendarEvent[]> = {};
+
+    await Promise.all(
+      verifiedIds.map(async (friendId) => {
+        try {
+          const accounts = await ctx.runQuery(
+            internal.calendarHelpers.getGoogleAccountsForUser,
+            { userId: friendId },
+          );
+
+          if (accounts.length === 0) {
+            result[friendId] = [];
+            return;
+          }
+
+          const eventFetches: Promise<CalendarEvent[]>[] = [];
+
+          for (const account of accounts) {
+            let accessToken = account.accessToken;
+
+            if (account.expiresAt < nowSec + 60) {
+              try {
+                const refreshed = await refreshAccessToken(account.refreshToken);
+                accessToken = refreshed.access_token;
+                await ctx.runMutation(internal.calendarHelpers.updateTokens, {
+                  accountId: account._id,
+                  accessToken,
+                  expiresAt: nowSec + refreshed.expires_in,
+                });
+              } catch {
+                continue;
+              }
+            }
+
+            const storedCalendars = await ctx.runQuery(
+              internal.calendarHelpers.getCalendarsForAccount,
+              { accountId: account._id },
+            );
+            const hiddenIds = new Set(
+              storedCalendars
+                .filter((c) => c.isHidden)
+                .map((c) => c.googleCalendarId),
+            );
+
+            let calendars: GoogleCalendarListEntry[];
+            try {
+              calendars = await fetchCalendarList(accessToken);
+            } catch {
+              continue;
+            }
+
+            for (const cal of calendars) {
+              if (cal.selected === false) continue;
+              if (hiddenIds.has(cal.id)) continue;
+
+              eventFetches.push(
+                fetchEvents(accessToken, cal.id, args.timeMin, args.timeMax)
+                  .then((events) =>
+                    events
+                      .filter((e) => e.status !== "cancelled")
+                      .map((event) => {
+                        const isAllDay = !event.start.dateTime;
+                        return {
+                          id: `${account._id}_${event.id}`,
+                          title: "Busy",
+                          start: event.start.dateTime ?? event.start.date ?? "",
+                          end: event.end.dateTime ?? event.end.date ?? "",
+                          isAllDay,
+                          calendarName: "",
+                          calendarColor: "",
+                          googleAccountEmail: account.email,
+                        };
+                      }),
+                  )
+                  .catch(() => [] as CalendarEvent[]),
+              );
+            }
+          }
+
+          const arrays = await Promise.all(eventFetches);
+          const friendEvents = arrays.flat();
+          friendEvents.sort((a, b) => a.start.localeCompare(b.start));
+          result[friendId] = friendEvents;
+        } catch {
+          result[friendId] = [];
+        }
+      }),
+    );
+
+    return result;
   },
 });

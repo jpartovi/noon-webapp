@@ -36,7 +36,7 @@ async function upsertGoogleAccount(
       expiresAt,
     });
   } else {
-    await ctx.db.insert("googleAccounts", {
+    const newAccountId = await ctx.db.insert("googleAccounts", {
       userId,
       googleAccountId,
       email: (profile.googleEmail as string) ?? "",
@@ -44,7 +44,27 @@ async function upsertGoogleAccount(
       refreshToken: googleRefreshToken,
       expiresAt,
     });
+    const user = await ctx.db.get(userId);
+    if (user && !user.primaryGoogleAccountId) {
+      await ctx.db.patch(userId, { primaryGoogleAccountId: newAccountId });
+    }
   }
+}
+
+async function resolveSessionUserId(
+  ctx: MutationCtx,
+): Promise<Id<"users"> | null> {
+  const verifiers = await ctx.db
+    .query("authVerifiers")
+    .order("desc")
+    .collect();
+  for (const v of verifiers) {
+    if (v.sessionId) {
+      const session = await ctx.db.get(v.sessionId);
+      if (session) return session.userId;
+    }
+  }
+  return null;
 }
 
 const isPhoneOtpBypassEnabled = process.env.AUTH_PHONE_SMS_BYPASS !== "false";
@@ -113,44 +133,36 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
       }
     ): Promise<Id<"users">> {
       const { existingUserId, profile } = args;
-      const isPhoneProvider = args.type === "phone";
+      const isOAuth = args.type === "oauth";
 
       if (existingUserId) {
-        if (isPhoneProvider && typeof profile.phone === "string") {
+        if (!isOAuth && typeof profile.phone === "string") {
           await ctx.db.patch(existingUserId, {
             phone: normalizePhone(profile.phone),
             phoneVerificationTime: Date.now(),
           });
         }
-        if (!isPhoneProvider) {
+        if (isOAuth) {
+          const sessionUserId = await resolveSessionUserId(ctx);
+          if (sessionUserId && sessionUserId !== existingUserId) {
+            throw new Error(
+              "This Google account is already linked to another user"
+            );
+          }
           await upsertGoogleAccount(ctx, existingUserId, profile);
         }
         return existingUserId;
       }
 
-      if (!isPhoneProvider) {
-        // The library doesn't forward the originating session to custom
-        // callbacks, so resolve it from the OAuth verifier that is still
-        // alive at this point in the transaction.
-        const verifiers = await ctx.db
-          .query("authVerifiers")
-          .order("desc")
-          .collect();
-        for (const v of verifiers) {
-          if (v.sessionId) {
-            const session = await ctx.db.get(v.sessionId);
-            if (session) {
-              // afterUserCreatedOrUpdated is unreachable when a custom
-              // createOrUpdateUser is provided, so handle Google account
-              // linking directly here.
-              await upsertGoogleAccount(ctx, session.userId, profile);
-              return session.userId;
-            }
-          }
+      if (isOAuth) {
+        const sessionUserId = await resolveSessionUserId(ctx);
+        if (!sessionUserId) {
+          throw new Error(
+            "Phone verification required before linking other accounts"
+          );
         }
-        throw new Error(
-          "Phone verification required before linking other accounts"
-        );
+        await upsertGoogleAccount(ctx, sessionUserId, profile);
+        return sessionUserId;
       }
 
       const normalizedPhone =

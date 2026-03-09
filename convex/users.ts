@@ -24,6 +24,19 @@ export const listMyGoogleAccounts = query({
   },
 });
 
+export const setPrimaryGoogleAccount = mutation({
+  args: { accountId: v.id("googleAccounts") },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) throw new Error("Not authenticated");
+    const account = await ctx.db.get(args.accountId);
+    if (!account || account.userId !== userId) {
+      throw new Error("Account not found");
+    }
+    await ctx.db.patch(userId, { primaryGoogleAccountId: args.accountId });
+  },
+});
+
 export const removeGoogleAccount = mutation({
   args: { accountId: v.id("googleAccounts") },
   handler: async (ctx, args) => {
@@ -33,6 +46,13 @@ export const removeGoogleAccount = mutation({
     const account = await ctx.db.get(args.accountId);
     if (!account || account.userId !== userId) {
       throw new Error("Account not found");
+    }
+
+    const user = await ctx.db.get(userId);
+    if (user?.primaryGoogleAccountId === args.accountId) {
+      throw new Error(
+        "Cannot remove your primary account. Switch primary to another account first.",
+      );
     }
 
     const allAccounts = await ctx.db

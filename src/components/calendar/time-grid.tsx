@@ -5,6 +5,7 @@ import { addDays, isSameDay, parseISO, startOfDay, differenceInMinutes } from "d
 import { cn } from "@/lib/utils";
 import { EventBlock } from "./event-block";
 import type { CalendarEvent, PositionedEvent } from "./types";
+import type { FreeTimeSlot } from "@/lib/free-time";
 
 const HOUR_HEIGHT = 60;
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
@@ -99,11 +100,13 @@ function layoutOverlapping(events: CalendarEvent[], day: Date): PositionedEvent[
 }
 
 interface TimeGridProps {
-  weekStart: Date;
+  viewStart: Date;
+  visibleDays: number;
   events: CalendarEvent[];
+  freeTimeSlots?: FreeTimeSlot[];
 }
 
-export function TimeGrid({ weekStart, events }: TimeGridProps) {
+export function TimeGrid({ viewStart, visibleDays, events, freeTimeSlots = [] }: TimeGridProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [currentMinute, setCurrentMinute] = useState(() => {
     const now = new Date();
@@ -126,13 +129,17 @@ export function TimeGrid({ weekStart, events }: TimeGridProps) {
   }, []);
 
   const today = new Date();
-  const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  const days = Array.from({ length: visibleDays }, (_, i) => addDays(viewStart, i));
 
   return (
     <div ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-hidden">
       <div
-        className="grid grid-cols-[60px_repeat(7,1fr)] relative"
-        style={{ height: `${24 * HOUR_HEIGHT}px` }}
+        className="relative"
+        style={{
+          display: "grid",
+          gridTemplateColumns: `44px repeat(${visibleDays}, 1fr)`,
+          height: `${24 * HOUR_HEIGHT}px`,
+        }}
       >
         {/* Hour labels column */}
         <div className="relative">
@@ -166,7 +173,7 @@ export function TimeGrid({ weekStart, events }: TimeGridProps) {
               key={dayIndex}
               className={cn(
                 "relative border-l border-border",
-                isToday && "bg-primary/3",
+                
               )}
             >
               {/* Hour grid lines */}
@@ -186,6 +193,22 @@ export function TimeGrid({ weekStart, events }: TimeGridProps) {
                   style={{ top: `${hour * HOUR_HEIGHT + HOUR_HEIGHT / 2}px` }}
                 />
               ))}
+
+              {/* Free time overlay */}
+              {freeTimeSlots
+                .filter((slot) => slot.dayIndex === dayIndex)
+                .map((slot, i) => {
+                  const top = (slot.startMin / 60) * HOUR_HEIGHT;
+                  const height =
+                    ((slot.endMin - slot.startMin) / 60) * HOUR_HEIGHT;
+                  return (
+                    <div
+                      key={`free-${i}`}
+                      className="absolute inset-x-0 z-1 pointer-events-none bg-green-400/15"
+                      style={{ top: `${top}px`, height: `${height}px` }}
+                    />
+                  );
+                })}
 
               {/* Events */}
               {positioned.map((event) => {

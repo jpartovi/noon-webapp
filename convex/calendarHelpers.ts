@@ -40,6 +40,40 @@ export const getCalendarsForAccount = internalQuery({
   },
 });
 
+export const getGoogleAccountsForUser = internalQuery({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("googleAccounts")
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .collect();
+  },
+});
+
+export const verifyFriendships = internalQuery({
+  args: {
+    userId: v.id("users"),
+    friendIds: v.array(v.id("users")),
+  },
+  handler: async (ctx, args) => {
+    const verified: (typeof args.friendIds)[number][] = [];
+    for (const friendId of args.friendIds) {
+      const [id1, id2] =
+        args.userId < friendId
+          ? [args.userId, friendId]
+          : [friendId, args.userId];
+      const friendship = await ctx.db
+        .query("friendships")
+        .withIndex("by_pair", (q) => q.eq("userId1", id1).eq("userId2", id2))
+        .first();
+      if (friendship && friendship.status === "accepted") {
+        verified.push(friendId);
+      }
+    }
+    return verified;
+  },
+});
+
 export const upsertCalendars = internalMutation({
   args: {
     accountId: v.id("googleAccounts"),

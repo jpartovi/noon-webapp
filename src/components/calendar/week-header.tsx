@@ -6,30 +6,32 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 interface WeekHeaderProps {
-  weekStart: Date;
+  viewStart: Date;
+  visibleDays: number;
   onPrevWeek: () => void;
   onNextWeek: () => void;
   onToday: () => void;
 }
 
 export function WeekHeader({
-  weekStart,
+  viewStart,
+  visibleDays,
   onPrevWeek,
   onNextWeek,
   onToday,
 }: WeekHeaderProps) {
   const today = new Date();
-  const weekEnd = addDays(weekStart, 6);
+  const viewEnd = addDays(viewStart, visibleDays - 1);
 
   const sameMonth =
-    weekStart.getMonth() === weekEnd.getMonth() &&
-    weekStart.getFullYear() === weekEnd.getFullYear();
+    viewStart.getMonth() === viewEnd.getMonth() &&
+    viewStart.getFullYear() === viewEnd.getFullYear();
 
   const dateRange = sameMonth
-    ? `${format(weekStart, "MMM d")} – ${format(weekEnd, "d, yyyy")}`
-    : weekStart.getFullYear() === weekEnd.getFullYear()
-      ? `${format(weekStart, "MMM d")} – ${format(weekEnd, "MMM d, yyyy")}`
-      : `${format(weekStart, "MMM d, yyyy")} – ${format(weekEnd, "MMM d, yyyy")}`;
+    ? `${format(viewStart, "MMM d")} – ${format(viewEnd, "d, yyyy")}`
+    : viewStart.getFullYear() === viewEnd.getFullYear()
+      ? `${format(viewStart, "MMM d")} – ${format(viewEnd, "MMM d, yyyy")}`
+      : `${format(viewStart, "MMM d, yyyy")} – ${format(viewEnd, "MMM d, yyyy")}`;
 
   return (
     <div className="shrink-0">
@@ -48,10 +50,16 @@ export function WeekHeader({
         </div>
       </div>
 
-      <div className="grid grid-cols-[60px_repeat(7,1fr)] border-b border-border">
+      <div
+        className="border-b border-border"
+        style={{
+          display: "grid",
+          gridTemplateColumns: `44px repeat(${visibleDays}, 1fr)`,
+        }}
+      >
         <div />
-        {Array.from({ length: 7 }, (_, i) => {
-          const day = addDays(weekStart, i);
+        {Array.from({ length: visibleDays }, (_, i) => {
+          const day = addDays(viewStart, i);
           const isToday = isSameDay(day, today);
 
           return (
@@ -59,7 +67,7 @@ export function WeekHeader({
               key={i}
               className={cn(
                 "flex flex-col items-center py-2 text-center border-l border-border",
-                isToday && "bg-primary/5",
+                
               )}
             >
               <span

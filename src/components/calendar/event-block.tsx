@@ -58,7 +58,7 @@ export function EventBlock({
   });
 
   const leftPx = event.column * STAGGER_PX;
-  const shrinkPx = (event.totalColumns - 1) * STAGGER_PX + 4;
+  const shrinkPx = (event.totalColumns - 1) * STAGGER_PX + 12;
 
   return (
     <div

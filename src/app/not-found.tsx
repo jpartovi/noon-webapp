@@ -5,7 +5,7 @@ export default function NotFound() {
     <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-4">
       <h1 className="text-xl font-semibold">Page not found</h1>
       <Link
-        href="/"
+        href="/calendar"
         className="text-sm text-primary underline-offset-4 hover:underline"
       >
         Go home

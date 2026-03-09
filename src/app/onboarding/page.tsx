@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api } from "convex/_generated/api";
 import { Button } from "@/components/ui/button";
+import { GoogleAccountList } from "@/components/google-account-list";
 import { cn } from "@/lib/utils";
 
 export default function OnboardingPage(_props: { params: Promise<unknown>; searchParams: Promise<unknown> }) {
@@ -14,6 +15,8 @@ export default function OnboardingPage(_props: { params: Promise<unknown>; searc
   const user = useQuery(api.users.getMe);
   const googleAccounts = useQuery(api.users.listMyGoogleAccounts);
   const updateProfile = useMutation(api.users.updateProfile);
+  const removeAccount = useMutation(api.users.removeGoogleAccount);
+  const setPrimary = useMutation(api.users.setPrimaryGoogleAccount);
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -26,7 +29,7 @@ export default function OnboardingPage(_props: { params: Promise<unknown>; searc
   useEffect(() => {
     if (user === undefined || googleAccounts === undefined) return;
     if (user?.isOnboarded) {
-      router.replace("/friends");
+      router.replace("/");
       return;
     }
     if (user?.firstName) setFirstName(user.firstName);
@@ -58,7 +61,7 @@ export default function OnboardingPage(_props: { params: Promise<unknown>; searc
     setLoading(true);
     try {
       await updateProfile({ isOnboarded: true });
-      router.replace("/friends");
+      router.replace("/");
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to finish");
@@ -172,53 +175,13 @@ export default function OnboardingPage(_props: { params: Promise<unknown>; searc
 
         {step === "link-google" && (
           <div className="space-y-4">
-            {hasGoogle && (
-              <ul className="space-y-2">
-                {googleAccounts!.map((acct) => (
-                  <li
-                    key={acct._id}
-                    className="flex items-center gap-3 rounded-lg border border-border bg-muted/40 px-3 py-2.5"
-                  >
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 24 24"
-                        className="h-4 w-4"
-                        fill="currentColor"
-                      >
-                        <path d="M12.48 10.92v3.28h7.84c-.24 1.84-.853 3.187-1.787 4.133-1.147 1.147-2.933 2.4-6.053 2.4-4.827 0-8.6-3.893-8.6-8.72s3.773-8.72 8.6-8.72c2.6 0 4.507 1.027 5.907 2.347l2.307-2.307C18.747 1.44 16.133 0 12.48 0 5.867 0 .307 5.387.307 12s5.56 12 12.173 12c3.573 0 6.267-1.173 8.373-3.36 2.16-2.16 2.84-5.213 2.84-7.667 0-.76-.053-1.467-.173-2.053H12.48z" />
-                      </svg>
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-foreground">
-                        {acct.email}
-                      </p>
-                      <p className="text-xs text-muted-foreground">Linked</p>
-                    </div>
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
-                      className="h-4 w-4 shrink-0 text-emerald-500"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full"
-              onClick={handleLinkGoogle}
-            >
-              {hasGoogle ? "Add another Google account" : "Link Google account"}
-            </Button>
+            <GoogleAccountList
+              googleAccounts={googleAccounts ?? []}
+              primaryGoogleAccountId={user?.primaryGoogleAccountId}
+              onConnect={handleLinkGoogle}
+              onRemove={(accountId) => removeAccount({ accountId })}
+              onSetPrimary={(accountId) => setPrimary({ accountId })}
+            />
             {hasGoogle && (
               <Button
                 type="button"

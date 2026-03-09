@@ -1,24 +1,51 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { startOfWeek, addWeeks, addDays, startOfDay } from "date-fns";
 import { useAction } from "convex/react";
 import { api } from "convex/_generated/api";
+import type { Id } from "convex/_generated/dataModel";
 import { WeekHeader } from "./week-header";
 import { AllDayRow } from "./all-day-row";
 import { TimeGrid } from "./time-grid";
+import { FriendPickerPanel } from "./friend-picker-drawer";
+import { computeFreeSlots } from "@/lib/free-time";
+import { useIsMobile } from "@/hooks/use-is-mobile";
 import type { CalendarEvent } from "./types";
 
 export function WeekCalendar() {
-  const [weekStart, setWeekStart] = useState(() =>
-    startOfWeek(new Date(), { weekStartsOn: 0 }),
+  const isMobile = useIsMobile();
+  const visibleDays = isMobile ? 3 : 7;
+
+  const [viewStart, setViewStart] = useState(() =>
+    isMobile
+      ? startOfDay(new Date())
+      : startOfWeek(new Date(), { weekStartsOn: 0 }),
   );
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [selectedFriendIds, setSelectedFriendIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const [friendEvents, setFriendEvents] = useState<
+    Record<string, CalendarEvent[]>
+  >({});
+  const [minDuration, setMinDuration] = useState(60);
+
   const getCalendarEvents = useAction(api.calendar.getCalendarEvents);
+  const getFriendsEvents = useAction(api.calendar.getFriendsEvents);
   const fetchIdRef = useRef(0);
+  const friendFetchIdRef = useRef(0);
+
+  useEffect(() => {
+    setViewStart(
+      isMobile
+        ? startOfDay(new Date())
+        : startOfWeek(new Date(), { weekStartsOn: 0 }),
+    );
+  }, [isMobile]);
 
   const fetchEvents = useCallback(
     async (start: Date) => {
@@ -27,7 +54,7 @@ export function WeekCalendar() {
       setError(null);
 
       const timeMin = startOfDay(start).toISOString();
-      const timeMax = startOfDay(addDays(start, 7)).toISOString();
+      const timeMax = startOfDay(addDays(start, visibleDays)).toISOString();
 
       try {
         const result = await getCalendarEvents({ timeMin, timeMax });
@@ -43,29 +70,84 @@ export function WeekCalendar() {
         }
       }
     },
-    [getCalendarEvents],
+    [getCalendarEvents, visibleDays],
   );
 
   useEffect(() => {
-    fetchEvents(weekStart);
-  }, [weekStart, fetchEvents]);
+    fetchEvents(viewStart);
+  }, [viewStart, fetchEvents]);
+
+  const fetchFriendEvents = useCallback(
+    async (friendIds: string[], start: Date) => {
+      if (friendIds.length === 0) {
+        setFriendEvents({});
+        return;
+      }
+      const id = ++friendFetchIdRef.current;
+      const timeMin = startOfDay(start).toISOString();
+      const timeMax = startOfDay(addDays(start, visibleDays)).toISOString();
+
+      try {
+        const result = await getFriendsEvents({
+          friendIds: friendIds as Id<"users">[],
+          timeMin,
+          timeMax,
+        });
+        if (friendFetchIdRef.current === id) {
+          setFriendEvents(result);
+        }
+      } catch (e) {
+        console.error("Failed to fetch friend events:", e);
+        if (friendFetchIdRef.current === id) {
+          setFriendEvents({});
+        }
+      }
+    },
+    [getFriendsEvents, visibleDays],
+  );
+
+  useEffect(() => {
+    fetchFriendEvents(Array.from(selectedFriendIds), viewStart);
+  }, [selectedFriendIds, viewStart, fetchFriendEvents]);
+
+  const handleToggleFriend = useCallback((friendId: Id<"users">) => {
+    setSelectedFriendIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(friendId)) next.delete(friendId);
+      else next.add(friendId);
+      return next;
+    });
+  }, []);
 
   const timedEvents = events.filter((e) => !e.isAllDay);
   const allDayEvents = events.filter((e) => e.isAllDay);
 
+  const freeTimeSlots = useMemo(() => {
+    if (selectedFriendIds.size === 0) return [];
+    const all = computeFreeSlots(events, friendEvents, viewStart, visibleDays);
+    return all.filter((s) => s.endMin - s.startMin >= minDuration);
+  }, [events, friendEvents, viewStart, selectedFriendIds.size, visibleDays, minDuration]);
+
   const goToday = useCallback(() => {
-    setWeekStart(startOfWeek(new Date(), { weekStartsOn: 0 }));
-  }, []);
+    setViewStart(
+      isMobile
+        ? startOfDay(new Date())
+        : startOfWeek(new Date(), { weekStartsOn: 0 }),
+    );
+  }, [isMobile]);
 
   const goPrev = useCallback(() => {
-    setWeekStart((prev) => addWeeks(prev, -1));
-  }, []);
+    setViewStart((prev) =>
+      isMobile ? addDays(prev, -3) : addWeeks(prev, -1),
+    );
+  }, [isMobile]);
 
   const goNext = useCallback(() => {
-    setWeekStart((prev) => addWeeks(prev, 1));
-  }, []);
+    setViewStart((prev) =>
+      isMobile ? addDays(prev, 3) : addWeeks(prev, 1),
+    );
+  }, [isMobile]);
 
-  // Touch swipe state
   const touchStartX = useRef<number | null>(null);
 
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
@@ -85,7 +167,6 @@ export function WeekCalendar() {
     [goPrev, goNext],
   );
 
-  // Keyboard navigation
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
@@ -98,17 +179,18 @@ export function WeekCalendar() {
 
   return (
     <div
-      className="flex flex-col h-full bg-background"
+      className="flex flex-col flex-1 min-h-0 bg-background"
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
       <WeekHeader
-        weekStart={weekStart}
+        viewStart={viewStart}
+        visibleDays={visibleDays}
         onPrevWeek={goPrev}
         onNextWeek={goNext}
         onToday={goToday}
       />
-      <AllDayRow weekStart={weekStart} events={allDayEvents} />
+      <AllDayRow viewStart={viewStart} visibleDays={visibleDays} events={allDayEvents} />
 
       {loading && events.length === 0 ? (
         <div className="flex-1 flex items-center justify-center">
@@ -122,8 +204,20 @@ export function WeekCalendar() {
           <p className="text-sm text-destructive">{error}</p>
         </div>
       ) : (
-        <TimeGrid weekStart={weekStart} events={timedEvents} />
+        <TimeGrid
+          viewStart={viewStart}
+          visibleDays={visibleDays}
+          events={timedEvents}
+          freeTimeSlots={freeTimeSlots}
+        />
       )}
+
+      <FriendPickerPanel
+        selectedFriendIds={selectedFriendIds}
+        onToggleFriend={handleToggleFriend}
+        minDuration={minDuration}
+        onMinDurationChange={setMinDuration}
+      />
     </div>
   );
 }

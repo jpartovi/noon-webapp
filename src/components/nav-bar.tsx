@@ -11,7 +11,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { Users, Calendar, LogOut } from "lucide-react";
+import { Users, CalendarDays, Settings, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function NavBar() {
@@ -48,13 +48,17 @@ export function NavBar() {
             {displayName}
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-auto">
+            <DropdownMenuItem onClick={() => router.push("/calendar")}>
+              <CalendarDays className="size-4" />
+              Calendar
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => router.push("/friends")}>
               <Users className="size-4" />
               Friends
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => router.push("/calendar-accounts")}>
-              <Calendar className="size-4" />
-              Calendar accounts
+              <Settings className="size-4" />
+              Accounts
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleSignOut}>
